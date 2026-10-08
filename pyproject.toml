@@ -16,7 +16,7 @@ build-backend = "setuptools.build_meta"
 include = ["du_cli*"]
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "respx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
