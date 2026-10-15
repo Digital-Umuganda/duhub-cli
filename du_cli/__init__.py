@@ -1,1 +1,1 @@
-"""du CLI — external developer client for DU Speech Platform."""
+"""du CLI — external developer client for DUhub."""

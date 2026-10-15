@@ -41,7 +41,17 @@ def save_config(base_url: str | None, api_key: str | None) -> Path:
         lines.append(f"base_url = {_q(prev['base_url'])}")
     if "api_key" in prev:
         lines.append(f"api_key = {_q(prev['api_key'])}")
-    CONFIG_PATH.write_text("\n".join(lines) + ("\n" if lines else ""))
+    text = "\n".join(lines) + ("\n" if lines else "")
+    fd = os.open(CONFIG_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(text)
+    except OSError:
+        pass
+    try:
+        os.chmod(CONFIG_PATH, 0o600)
+    except OSError:
+        pass
     return CONFIG_PATH
 
 def clear_config() -> None:

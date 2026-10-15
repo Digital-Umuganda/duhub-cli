@@ -1,6 +1,6 @@
-# du-cli
+# duhub-cli
 
-Command-line client for the [DU Speech Platform](https://du-api.dev.umuganda.digital):
+Command-line client for [DUhub](https://beta.duhub.ai):
 transcribe audio, synthesize speech, translate text, and diarize meetings —
 all billed to your API key.
 
@@ -16,14 +16,15 @@ du diarize meeting.wav --format srt -o speakers.srt
 Requires Python 3.11+.
 
 ```bash
-pipx install git+https://github.com/Digital-Umuganda/du-cli.git
+pipx install duhub-cli
 du --version
 ```
 
 Alternatives:
 
 ```bash
-pip install git+https://github.com/Digital-Umuganda/du-cli.git   # plain pip
+pipx install git+https://github.com/Digital-Umuganda/duhub-cli.git
+pip install git+https://github.com/Digital-Umuganda/duhub-cli.git   # plain pip
 python -m du_cli.main --help                                     # without installing
 ```
 
@@ -33,7 +34,7 @@ python -m du_cli.main --help                                     # without insta
 ## Quickstart
 
 1. Create an account on the
-   [Dashboard](https://dashboard.du-api.dev.umuganda.digital) and copy an
+   [Dashboard](https://beta.duhub.ai) and copy an
    API key from **API Keys** (shown once — treat it like a password).
 2. Save it:
    ```bash
@@ -66,6 +67,8 @@ du configure --base-url http://localhost:8080  # point at local gateway
 du configure --reset                        # delete the file
 export DU_API_KEY=du_live_xxx DU_BASE_URL=https://du-api.dev.umuganda.digital
 ```
+
+> Prefer `DU_API_KEY` env var over `--api-key` — flags land in shell history.
 
 ## Commands
 

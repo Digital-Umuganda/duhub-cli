@@ -21,6 +21,18 @@ def test_health_ok(monkeypatch):
         r = runner.invoke(main.app, ["health"])
     assert r.exit_code == 0, r.output
 
+def test_health_needs_no_api_key(tmp_path, monkeypatch):
+    f = tmp_path / "config.toml"
+    monkeypatch.setattr(config, "CONFIG_PATH", f)
+    monkeypatch.setenv("DU_BASE_URL", "https://api.example")
+    monkeypatch.delenv("DU_API_KEY", raising=False)
+    with respx.mock:
+        route = respx.get("https://api.example/health").mock(return_value=Response(200, json={"status": "ok"}))
+        r = runner.invoke(main.app, ["health"])
+    assert r.exit_code == 0, r.output
+    assert route.called
+    assert "x-api-key" not in route.calls[0].request.headers
+
 def test_health_401_hint(monkeypatch):
     monkeypatch.setenv("DU_BASE_URL", "https://api.example")
     monkeypatch.setenv("DU_API_KEY", "bad")

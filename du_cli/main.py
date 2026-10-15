@@ -16,7 +16,7 @@ def _version_callback(value: bool) -> None:
 app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
-    help="DU Speech Platform CLI — STT, TTS, MT and diarization over your API key.",
+    help="DUhub CLI — STT, TTS, MT and diarization over your API key.",
     epilog="Keys live on the dashboard under API Keys; billing per second (audio) or word (text).",
 )
 
@@ -60,10 +60,9 @@ def health(
     cfg = _cfg(base_url, api_key)
     path = "/health/detailed" if detailed else "/health"
     try:
-        if not cfg["api_key"]:
-            raise CliError(401, "missing API key", "run `du configure --api-key KEY`")
+        headers = auth_headers(cfg["api_key"]) if cfg["api_key"] else {}
         with api_client() as c:
-            r = c.get(cfg["base_url"] + path, headers=auth_headers(cfg["api_key"]))
+            r = c.get(cfg["base_url"] + path, headers=headers)
         raise_for_api(r.status_code, r.text, path)
         output.present(
             r.text,
