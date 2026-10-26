@@ -1,5 +1,6 @@
 """du CLI entrypoint: configure, health, stt, tts, mt, diarize."""
 from __future__ import annotations
+import contextlib
 from pathlib import Path as _Path
 import typer
 from du_cli import config, output
@@ -32,6 +33,18 @@ def _root(
 def _cfg(base_url: str | None, api_key: str | None) -> dict[str, str]:
     return config.load_config(base_url, api_key)
 
+@contextlib.contextmanager
+def _api(cfg: dict[str, str], json_out: bool):
+    """Authed client; missing key, transport, or HTTP errors become exit(1)."""
+    try:
+        if not cfg["api_key"]:
+            raise CliError(401, "missing API key", "run `du configure --api-key KEY`")
+        with api_client() as c:
+            yield c
+    except CliError as e:
+        output.print_err(e.detail, e.hint, json_out)
+        raise typer.Exit(1)
+
 @app.command()
 def configure(
     base_url: str | None = typer.Option(None, "--base-url"),
@@ -47,7 +60,11 @@ def configure(
         typer.echo(f"base_url={cur['base_url']}")
         typer.echo("api_key=" + ("set" if cur["api_key"] else "missing"))
         return
-    p = config.save_config(base_url, api_key)
+    try:
+        p = config.save_config(base_url, api_key)
+    except OSError as e:
+        output.print_err(f"cannot write {config.CONFIG_PATH}: {e}", "check permissions", False)
+        raise typer.Exit(1)
     typer.echo(f"saved {p}")
 
 @app.command()
@@ -88,28 +105,22 @@ def stt(
     if p.stat().st_size > MAX_UPLOAD_BYTES:
         output.print_err("file exceeds 30 MB", "compress or split audio", json_out)
         raise typer.Exit(1)
-    try:
-        if not cfg["api_key"]:
-            raise CliError(401, "missing API key", "run `du configure --api-key KEY`")
-        with api_client() as c, p.open("rb") as fh:
-            r = c.post(
-                cfg["base_url"] + "/stt",
-                headers=auth_headers(cfg["api_key"], idempotency_key),
-                files={"file": (p.name, fh)},
-            )
-        raise_for_api(r.status_code, r.text, "/stt")
-        output.present(
-            r.text,
-            {
-                "units": r.headers.get("x-units", ""),
-                "cache": r.headers.get("x-cache-status", ""),
-                "request_id": r.headers.get("x-request-id", ""),
-            },
-            json_out, o,
+    with _api(cfg, json_out) as c, p.open("rb") as fh:
+        r = c.post(
+            cfg["base_url"] + "/stt",
+            headers=auth_headers(cfg["api_key"], idempotency_key),
+            files={"file": (p.name, fh)},
         )
-    except CliError as e:
-        output.print_err(e.detail, e.hint, json_out)
-        raise typer.Exit(1)
+        raise_for_api(r.status_code, r.text, "/stt")
+    output.present(
+        r.text,
+        {
+            "units": r.headers.get("x-units", ""),
+            "cache": r.headers.get("x-cache-status", ""),
+            "request_id": r.headers.get("x-request-id", ""),
+        },
+        json_out, o,
+    )
 
 @app.command()
 def tts(
@@ -130,21 +141,15 @@ def tts(
         raise typer.Exit(1)
     if not json_out:
         typer.echo(f"words={len(text.split())}")
-    try:
-        if not cfg["api_key"]:
-            raise CliError(401, "missing API key", "run `du configure --api-key KEY`")
-        with api_client() as c:
-            r = c.post(
-                cfg["base_url"] + "/tts",
-                headers={**auth_headers(cfg["api_key"]), "Content-Type": "application/json"},
-                json={"text": text},
-            )
+    with _api(cfg, json_out) as c:
+        r = c.post(
+            cfg["base_url"] + "/tts",
+            headers={**auth_headers(cfg["api_key"]), "Content-Type": "application/json"},
+            json={"text": text},
+        )
         raise_for_api(r.status_code, r.text, "/tts")
-        _Path(o).write_bytes(r.content)
-        output.print_ok({"units": r.headers.get("x-units", ""), "cache": r.headers.get("x-cache-status", ""), "request_id": r.headers.get("x-request-id", "")}, json_out)
-    except CliError as e:
-        output.print_err(e.detail, e.hint, json_out)
-        raise typer.Exit(1)
+    _Path(o).write_bytes(r.content)
+    output.print_ok({"units": r.headers.get("x-units", ""), "cache": r.headers.get("x-cache-status", ""), "request_id": r.headers.get("x-request-id", "")}, json_out)
 
 @app.command()
 def mt(
@@ -164,28 +169,22 @@ def mt(
     if not text.strip():
         output.print_err("empty text", "provide TEXT", json_out)
         raise typer.Exit(1)
-    try:
-        if not cfg["api_key"]:
-            raise CliError(401, "missing API key", "run `du configure --api-key KEY`")
-        with api_client() as c:
-            r = c.post(
-                cfg["base_url"] + "/mt",
-                headers={**auth_headers(cfg["api_key"]), "Content-Type": "application/json"},
-                json={"text": text, "source_lang": src, "target_lang": tgt},
-            )
-        raise_for_api(r.status_code, r.text, "/mt")
-        output.present(
-            r.text,
-            {
-                "units": r.headers.get("x-units", ""),
-                "cache": r.headers.get("x-cache-status", ""),
-                "request_id": r.headers.get("x-request-id", ""),
-            },
-            json_out, o,
+    with _api(cfg, json_out) as c:
+        r = c.post(
+            cfg["base_url"] + "/mt",
+            headers={**auth_headers(cfg["api_key"]), "Content-Type": "application/json"},
+            json={"text": text, "source_lang": src, "target_lang": tgt},
         )
-    except CliError as e:
-        output.print_err(e.detail, e.hint, json_out)
-        raise typer.Exit(1)
+        raise_for_api(r.status_code, r.text, "/mt")
+    output.present(
+        r.text,
+        {
+            "units": r.headers.get("x-units", ""),
+            "cache": r.headers.get("x-cache-status", ""),
+            "request_id": r.headers.get("x-request-id", ""),
+        },
+        json_out, o,
+    )
 
 @app.command()
 def diarize(
@@ -205,30 +204,24 @@ def diarize(
     if p.stat().st_size > MAX_UPLOAD_BYTES:
         output.print_err("file exceeds 30 MB", "compress or split audio", json_out)
         raise typer.Exit(1)
-    try:
-        if not cfg["api_key"]:
-            raise CliError(401, "missing API key", "run `du configure --api-key KEY`")
-        with api_client() as c, p.open("rb") as fh:
-            r = c.post(
-                cfg["base_url"] + "/diarize",
-                headers=auth_headers(cfg["api_key"]),
-                files={"file": (p.name, fh)},
-            )
-        raise_for_api(r.status_code, r.text, "/diarize")
-        try:
-            segs = r.json().get("segments", [])
-        except Exception:
-            output.print_err("invalid diarize response", "try `du health --detailed`", json_out)
-            raise typer.Exit(1)
-        rendered = _render_segments(segs, fmt)
-        output.present(
-            rendered,
-            {"units": r.headers.get("x-units", ""), "cache": "", "request_id": r.headers.get("x-request-id", "")},
-            json_out, o,
+    with _api(cfg, json_out) as c, p.open("rb") as fh:
+        r = c.post(
+            cfg["base_url"] + "/diarize",
+            headers=auth_headers(cfg["api_key"]),
+            files={"file": (p.name, fh)},
         )
-    except CliError as e:
-        output.print_err(e.detail, e.hint, json_out)
+        raise_for_api(r.status_code, r.text, "/diarize")
+    try:
+        segs = r.json().get("segments", [])
+    except Exception:
+        output.print_err("invalid diarize response", "try `du health --detailed`", json_out)
         raise typer.Exit(1)
+    rendered = _render_segments(segs, fmt)
+    output.present(
+        rendered,
+        {"units": r.headers.get("x-units", ""), "cache": "", "request_id": r.headers.get("x-request-id", "")},
+        json_out, o,
+    )
 
 
 if __name__ == "__main__":

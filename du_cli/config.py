@@ -43,11 +43,8 @@ def save_config(base_url: str | None, api_key: str | None) -> Path:
         lines.append(f"api_key = {_q(prev['api_key'])}")
     text = "\n".join(lines) + ("\n" if lines else "")
     fd = os.open(CONFIG_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        with os.fdopen(fd, "w") as fh:
-            fh.write(text)
-    except OSError:
-        pass
+    with os.fdopen(fd, "w") as fh:
+        fh.write(text)
     try:
         os.chmod(CONFIG_PATH, 0o600)
     except OSError:
