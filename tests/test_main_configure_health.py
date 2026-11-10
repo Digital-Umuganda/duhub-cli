@@ -2,7 +2,8 @@
 import respx
 from httpx import Response
 from typer.testing import CliRunner
-from du_cli import main, config
+
+from du_cli import config, main
 
 runner = CliRunner()
 
@@ -12,6 +13,18 @@ def test_configure_writes_file(tmp_path, monkeypatch):
     r = runner.invoke(main.app, ["configure", "--base-url", "https://x.example", "--api-key", "k"])
     assert r.exit_code == 0, r.output
     assert "saved" in r.output.lower()
+
+def test_configure_reset_error_is_clean(tmp_path, monkeypatch):
+    f = tmp_path / "config.toml"
+    monkeypatch.setattr(config, "CONFIG_PATH", f)
+    def boom():
+        raise PermissionError("denied")
+    monkeypatch.setattr(config, "clear_config", boom)
+    r = runner.invoke(main.app, ["configure", "--reset"])
+    assert r.exit_code == 1
+    out = (r.output or "") + (getattr(r, "stderr", None) or "")
+    assert "cannot remove" in out
+    assert "Traceback" not in out
 
 def test_health_ok(monkeypatch):
     monkeypatch.setenv("DU_BASE_URL", "https://api.example")
@@ -40,13 +53,13 @@ def test_health_401_hint(monkeypatch):
         respx.get("https://api.example/health").mock(return_value=Response(401, text="bad key"))
         r = runner.invoke(main.app, ["health"])
     assert r.exit_code == 1
-    assert "du configure" in r.output + (r.stderr or "")
+    assert "duhub configure" in r.output + (r.stderr or "")
 
 def test_version_and_health_json_single_object(monkeypatch):
     import json as _json
     r = runner.invoke(main.app, ["--version"])
     assert r.exit_code == 0
-    assert r.output.strip() == f"du {main.__version__}"
+    assert r.output.strip() == f"duhub {main.__version__}"
     monkeypatch.setenv("DU_BASE_URL", "https://api.example")
     monkeypatch.setenv("DU_API_KEY", "k")
     with respx.mock:

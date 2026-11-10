@@ -26,7 +26,6 @@ Repository = "https://github.com/Digital-Umuganda/duhub-cli"
 Issues = "https://github.com/Digital-Umuganda/duhub-cli/issues"
 
 [project.scripts]
-du = "du_cli.main:app"
 duhub = "du_cli.main:app"
 
 [build-system]

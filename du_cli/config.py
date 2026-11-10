@@ -1,5 +1,6 @@
 """Config load/save: env > ~/.config/du/config.toml > defaults."""
 from __future__ import annotations
+
 import os
 import tomllib
 from pathlib import Path
@@ -11,7 +12,7 @@ def _read_file(path: Path) -> dict[str, str]:
     try:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
-    except (FileNotFoundError, tomllib.TOMLDecodeError, OSError):
+    except (FileNotFoundError, tomllib.TOMLDecodeError, UnicodeDecodeError, OSError):
         return {}
     out: dict[str, str] = {}
     if isinstance(data.get("base_url"), str):
@@ -24,18 +25,25 @@ def load_config(base_url_override: str | None = None, api_key_override: str | No
     filed = _read_file(CONFIG_PATH)
     base = base_url_override if base_url_override is not None else os.environ.get("DU_BASE_URL", filed.get("base_url", DEFAULT_BASE_URL))
     key = api_key_override if api_key_override is not None else os.environ.get("DU_API_KEY", filed.get("api_key", ""))
-    return {"base_url": base.rstrip("/"), "api_key": key}
+    return {"base_url": base.strip().rstrip("/"), "api_key": key.strip()}
 
 def _q(v: str) -> str:
-    return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    escaped = (
+        v.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return '"' + escaped + '"'
 
 def save_config(base_url: str | None, api_key: str | None) -> Path:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     prev = _read_file(CONFIG_PATH)
     if base_url is not None:
-        prev["base_url"] = base_url.rstrip("/")
+        prev["base_url"] = base_url.strip().rstrip("/")
     if api_key is not None:
-        prev["api_key"] = api_key
+        prev["api_key"] = api_key.strip()
     lines = []
     if "base_url" in prev:
         lines.append(f"base_url = {_q(prev['base_url'])}")
@@ -43,12 +51,13 @@ def save_config(base_url: str | None, api_key: str | None) -> Path:
         lines.append(f"api_key = {_q(prev['api_key'])}")
     text = "\n".join(lines) + ("\n" if lines else "")
     fd = os.open(CONFIG_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as fh:
+    if hasattr(os, "fchmod"):
+        try:
+            os.fchmod(fd, 0o600)  # tighten before the key is written
+        except OSError:
+            pass
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(text)
-    try:
-        os.chmod(CONFIG_PATH, 0o600)
-    except OSError:
-        pass
     return CONFIG_PATH
 
 def clear_config() -> None:

@@ -1,8 +1,8 @@
 # cli/tests/test_main_stt_tts.py
-from pathlib import Path
 import respx
 from httpx import Response
 from typer.testing import CliRunner
+
 from du_cli import main
 
 runner = CliRunner()
@@ -74,3 +74,51 @@ def test_tts_text_file_overrides_positional(tmp_path, monkeypatch):
     assert route.called
     import json as _json
     assert _json.loads(route.calls[0].request.content) == {"text": "file text wins"}
+
+def test_stt_rejects_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("DU_BASE_URL", "https://api.example")
+    monkeypatch.setenv("DU_API_KEY", "k")
+    r = runner.invoke(main.app, ["stt", str(tmp_path)])
+    assert r.exit_code == 1
+    out = (r.output or "") + (getattr(r, "stderr", None) or "")
+    assert "not a file" in out
+    assert "Traceback" not in out
+
+def test_stt_output_path_error_is_clean(tmp_path, monkeypatch):
+    monkeypatch.setenv("DU_BASE_URL", "https://api.example")
+    monkeypatch.setenv("DU_API_KEY", "k")
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"RIFF" + b"\x00" * 10)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory")
+    with respx.mock:
+        route = respx.post("https://api.example/stt").mock(return_value=Response(200, json={"text": "muraho"}))
+        r = runner.invoke(main.app, ["stt", str(wav), "-o", str(blocker / "t.json")])
+    assert r.exit_code == 1
+    assert not route.called
+    out = (r.output or "") + (getattr(r, "stderr", None) or "")
+    assert "cannot write" in out
+    assert "Traceback" not in out
+
+def test_tts_output_path_error_is_clean(tmp_path, monkeypatch):
+    monkeypatch.setenv("DU_BASE_URL", "https://api.example")
+    monkeypatch.setenv("DU_API_KEY", "k")
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory")
+    with respx.mock:
+        route = respx.post("https://api.example/tts").mock(return_value=Response(200, content=b"W"))
+        r = runner.invoke(main.app, ["tts", "hello", "-o", str(blocker / "o.wav")])
+    assert r.exit_code == 1
+    assert not route.called
+    out = (r.output or "") + (getattr(r, "stderr", None) or "")
+    assert "cannot write" in out
+    assert "Traceback" not in out
+
+def test_tts_sends_idempotency_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("DU_BASE_URL", "https://api.example")
+    monkeypatch.setenv("DU_API_KEY", "k")
+    with respx.mock:
+        route = respx.post("https://api.example/tts").mock(return_value=Response(200, content=b"W"))
+        r = runner.invoke(main.app, ["tts", "hello", "-o", str(tmp_path / "o.wav"), "--idempotency-key", "idem-tts"])
+    assert r.exit_code == 0, r.output
+    assert route.calls[0].request.headers["Idempotency-Key"] == "idem-tts"
